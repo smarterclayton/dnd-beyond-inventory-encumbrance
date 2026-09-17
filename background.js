@@ -160,22 +160,52 @@ async function getData() {
                 const fullLanterns = Math.max(lantern.quantity, Math.floor(oil.quantity / 2))
                 if (fullLanterns > 0) {
                     var fullLantern = structuredClone(lantern);
-                    fullLantern.name += " (2 flasks of oil)";
-                    fullLantern.itemWeight += oil.itemWeight*2;
+                    fullLantern.name += " *(2 flasks of oil)*";
+                    fullLantern.itemWeight += oil.itemWeight * 2;
                     items.push(fullLantern)
-                    oil.quantity -= fullLanterns*2;
+                    oil.quantity -= fullLanterns * 2;
                     lantern.quantity -= fullLanterns;
                 }
                 if (oil.quantity > 0 && lantern.quantity > 0) {
                     var partialLantern = structuredClone(lantern);
-                    partialLantern.name += " (1 flask of oil)";
-                    partialLantern.itemWeight += oil.itemWeight*2;
+                    partialLantern.name += " *(1 flask of oil)*";
+                    partialLantern.itemWeight += oil.itemWeight * 2;
                     items.push(partialLantern)
                     oil.quantity -= 1;
-                    lantern.quantity -= 1; 
+                    lantern.quantity -= 1;
                 }
             }
 
+            // merge bundled items that have the same name, weight, and bundle count
+            var bundleTypes = new Map();
+            items.forEach((item, idx) => {
+                if (!item.itemBundleType) { return; }
+                if (!bundleTypes.has(item.name)) { bundleTypes.set(item.name, []) }
+                bundleTypes.get(item.name).push(idx);
+            });
+            bundleTypes.forEach((indices) => {
+                if (indices.length < 2) {
+                    return;
+                }
+                const item = items[indices[0]];
+                console.log("test merge of "+item.name+" from "+c.data.name+" at position "+indices[0] + " with length "+indices.length);
+                for (var i = 1; i < indices.length; i++) {
+                    const other = items[indices[i]];
+                    if (item.itemBundleType === other.itemBundleType &&
+                        item.equipped === other.equipped && 
+                        item.itemBundleCount === other.itemBundleCount && 
+                        item.itemWeight === other.itemWeight &&
+                        item.containerId === other.containerId
+                    ) {
+                        console.log("merge item "+item.name+" at "+indices[i]+" to "+indices[0]);
+                        item.quantity += other.quantity;
+                        items[indices[i]] = null
+                    } else {
+                        console.log("skip merge item "+item.name+" at "+indices[i]+" to "+indices[0]);
+                    }
+                }
+            })
+            items = items.filter((item) => !!item);
 
             const coins = c.data.currencies.pp + c.data.currencies.ep + c.data.currencies.gp + c.data.currencies.sp + c.data.currencies.cp;
             const coinValue = c.data.currencies.gp + c.data.currencies.cp / 100 + c.data.currencies.sp / 10 + c.data.currencies.ep * 2 + c.data.currencies.pp * 10;
@@ -186,11 +216,11 @@ async function getData() {
                     itemWeight: 0.01,
                     itemBundleCount: 500,
                     itemBundleType: "Coins",
-                    itemCost: -coinValue/coins,
+                    itemCost: -coinValue / coins,
                 })
             }
 
-            items = items.filter((item) => item.quantity > 0).sort((a,b) => {
+            items = items.filter((item) => item.quantity > 0).sort((a, b) => {
                 const slots = b.itemSlots - a.itemSlots;
                 if (slots !== 0) { return slots; }
                 const weight = b.itemWeight - a.itemWeight;
@@ -207,7 +237,7 @@ async function getData() {
                 gold: coinValue,
                 items: items,
                 totalWeight: items.map((item) => item.quantity * item.itemWeight).reduce((a, b) => a + b, 0),
-                totalCost: items.map((item) => item.quantity * Math.max(item.itemCost,0)).reduce((a, b) => a + b, 0),
+                totalCost: items.map((item) => item.quantity * Math.max(item.itemCost, 0)).reduce((a, b) => a + b, 0),
             }
         });
 
@@ -234,37 +264,74 @@ async function getData() {
         ]));
 
         const tables = data.map((c) => {
-            var idx = -1;
-            var qty = 0;
             var packed = [], equipped = [];
-            c.items.filter((item) => item.itemSlots > 0).each((item) => {
+            c.items.filter((item) => item.itemSlots > 0).forEach((item) => {
                 const rows = item.equipped ? equipped : packed;
                 if (item.itemBundleCount > 1) {
-                    const count = Math.ceil(item.quantity / item.itemBundleCount)
-                    for (var i=0; i<count; i++) {
-                        const quantity = (i === (count-1)) 
-                            ? count % item.itemBundleCount 
-                            : item.itemBundleCount;
-                        rows.push([item.name + " ("+quantity+")"]);
+                    // create one row per full itemBundleCount, then remainder
+                    const remainder = item.quantity % item.itemBundleCount;
+                    for (var i = 0; i < Math.floor(item.quantity / item.itemBundleCount); i++) {
+                        rows.push(item.name + " *(" + item.itemBundleCount + ")*");
+                    }
+                    if (remainder > 0) {
+                        rows.push(item.name + " *(" + remainder + ")*");
                     }
                 } else {
-                    for (var i=0; i<item.quantity; i++) {
-                        for (var j=0; j<item.itemSlots; j++) {
-                            rows.push([item.name + " ("+(j+1)+" of "+item.itemSlots+")"]);
+                    // occupy all slots per item
+                    for (var i = 0; i < item.quantity; i++) {
+                        for (var j = 0; j < item.itemSlots; j++) {
+                            if (item.itemSlots > 1) {
+                                rows.push(item.name + " *(" + (j + 1) + " of " + item.itemSlots + ")*");
+                            } else {
+                                rows.push(item.name);
+                            }
                         }
                     }
                 }
             })
+
+            var unencumberingPacked = [], unencumberingEquipped = []
+            c.items.filter((item) => item.itemSlots === 0).forEach((item) => {
+                const rows = item.equipped ? unencumberingEquipped : unencumberingPacked;
+                rows.push(item.name + " *(" + item.quantity + ")*");
+            });
+
             var outputPacked = [];
             var bonusPacked = [];
+            const maxPacked = 16 + c.extraSlots
             if (c.extraSlots > 0) {
                 bonusPacked = packed.splice(0, c.extraSlots);
                 outputPacked = packed.splice(0, 16);
             } else {
-                outputPacked = packed.splice(0, 16 - c.extraSlots);
+                outputPacked = packed.splice(0, 16 + c.extraSlots);
             }
             const outputEquipped = equipped.splice(0, 9);
+
+            var aligned = new Array(maxPacked);
+            const equippedOffset = maxPacked - 9 - 1
+            for (var i = 0; i < aligned.length; i++) {
+                aligned[i] = new Array(5);
+                if (i - 1 < outputPacked.length) {
+                    aligned[i][3] = outputPacked[i];
+                }
+                if (i > equippedOffset) {
+                    aligned[i][2] = (i - equippedOffset).toString();
+                }
+                aligned[i][4] = (i + 1).toString();
+            }
+            for (var i = 0; i < outputEquipped.length; i++) {
+                aligned[equippedOffset + 1 + i][0] = outputEquipped[i];
+            }
+
+            aligned.unshift(
+                ["**Equipped Items**", null, null, "**Packed Items**", null],
+                Array(5).fill("---"),
+            );
+
+            return aligned.map((r) => "| " + r.join(" | ") + " |").join("\n");
         });
+
+        console.log(tables);
 
         return "|Bruce|\n|Stuff|\n"
     } catch (error) {
