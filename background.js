@@ -5,7 +5,6 @@ async function getData() {
             "https://auth-service.dndbeyond.com/v1/cobalt-token",
             { method: "POST", credentials: "include" })
             .then((response) => response.json());
-        console.log(auth);
         const token = auth.token;
         return token;
     }
@@ -24,68 +23,93 @@ async function getData() {
     function modifierForAbilityScore(score) {
         return Math.round((score - 10) / 2);
     }
+  
+    const conditionSpeeds = new Map([
+        ["Travelling light", 10],
+        ["Unencumbered", 0],
+        ["Lightly encumbered", -10],
+        ["Heavily encumbered", -20],
+    ]);
+    const conditionText = new Map([
+        ["Heavily encumbered", "You have Disadvantage on checks, attacks, and saving throws that use STR, DEX, or CON."]
+    ])
+    const knownSingleSlot = new Set([
+        "Bedroll",
+        "Waterskin",
+        "Bagpipes",
+        "Rope",
+        "Blanket",
+        "Tinderbox",
+        "Book",
+        "Lantern",
+        "Hooded Lantern",
+        "Hunting Trap",
+        "Worn Fiddle",
+        "Carpenter's Tools",
+        "Herbalism Kit",
+        "Grappling Hook",
+        "Healer's Kit",
+        "Calligrapher's Supplies",
+        "Jeweler's Tools",
+        "Traveler's Clothes",
+        "Robe",
+        "Fine Clothes",
+        "Component Pouch",
+    ]);
+    const knownDoubleSlot = new Set([
+        "Quarterstaff",
+        "Tent",
+    ]);
+    const knownSimpleBundle = new Set([
+        "Torch",
+        "Rations",
+        "Oil",
+        "Holy Water",
+        "Dagger",
+    ]);
+    const knownZeroEquipped = new Set([
+        "Traveler's Clothes",
+        "Robe",
+        "Fine Clothes",
+        "Component Pouch",
+    ]);
+    const knownTinySlot = new Set([
+        "Mirror",
+    ]);
 
-    const campaign = (await chrome.storage.local.get('dnd_beyond_inventory_campaign')).dnd_beyond_inventory_campaign;
+    const parameters = (await chrome.storage.local.get(['dnd_beyond_inventory_campaign', 'dnd_beyond_inventory_character']));
 
     try {
+        const campaign = parameters.dnd_beyond_inventory_campaign
         const token = await getToken();
-        const characterSummary = await summon(
-            "https://api.dndbeyond.com/campaigns/v1/" + campaign + "/characters",
-            token,
-        );
-        console.log(characterSummary);
 
-        const allCharacters = characterSummary.data.map((character) => {
-            const name = character.name;
-            const id = character.id;
-            return summon(
-                "https://character-service.dndbeyond.com/character/v5/character/" + id + "?includeCustomItems=true",
+        var allCharacters = []
+        if (!!parameters.dnd_beyond_inventory_character) {
+            allCharacters.push(
+                summon(
+                    "https://character-service.dndbeyond.com/character/v5/character/" + parameters.dnd_beyond_inventory_character + "?includeCustomItems=true",
+                    token,
+                ),
+            );
+        } else {
+            const characterSummary = await summon(
+                "https://api.dndbeyond.com/campaigns/v1/" + campaign + "/characters",
                 token,
             );
-        });
+
+            allCharacters = characterSummary.data.map((character) => {
+                const name = character.name;
+                const id = character.id;
+                return summon(
+                    "https://character-service.dndbeyond.com/character/v5/character/" + id + "?includeCustomItems=true",
+                    token,
+                );
+            });
+        }
         const characters = await Promise.all(allCharacters);
+        
         var defaultSlots = [];
-        const knownSingleSlot = new Set([
-            "Bedroll",
-            "Waterskin",
-            "Bagpipes",
-            "Rope",
-            "Blanket",
-            "Tinderbox",
-            "Book",
-            "Lantern",
-            "Hooded Lantern",
-            "Hunting Trap",
-            "Worn Fiddle",
-            "Carpenter's Tools",
-            "Herbalism Kit",
-            "Grappling Hook",
-            "Healer's Kit",
-            "Calligrapher's Supplies",
-            "Jeweler's Tools",
-            "Traveler's Clothes",
-            "Robe",
-            "Fine Clothes",
-        ]);
-        const knownDoubleSlot = new Set([
-            "Tent",
-        ])
-        const knownSimpleBundle = new Set([
-            "Torch",
-            "Rations",
-            "Oil",
-            "Holy Water",
-        ]);
-        const knownZeroEquipped = new Set([
-            "Traveler's Clothes",
-            "Robe",
-            "Fine Clothes",
-        ]);
-        const knownTinySlot = new Set([
-            "Mirror",
-        ]);
         const data = characters.map((c) => {
-            console.log(c.data);
             const overrideStr = c.data.overrideStats.find((s) => s.id === 1);
             const baseStr = c.data.stats.find((s) => s.id === 1);
             const bonusStr = c.data.bonusStats.find((s) => s.id === 1);
@@ -101,11 +125,24 @@ async function getData() {
                     str += raceStr.value
                 }
             }
+            const raceSpeed = c.data.race.weightSpeeds.normal.walk;
+            var containers = new Map();
+            c.data.inventory.forEach((item, idx) => {
+                if (!item.containerEntityId || item.containerEntityId == c.data.id) {
+                    return;
+                }
+                if (!containers.has(item.containerEntityId)) {
+                    containers.set(item.containerEntityId, []);
+                }
+                containers.get(item.containerEntityId).push(idx);
+            });
+
             var items = c.data.inventory.map((item) => {
                 const def = item.definition;
+                const effectiveEquipped = item.equipped || (item.containerEntityId == c.data.id && !def.isContainer);
                 var itemSlots = 1;
                 var itemBundleType, itemBundleCount;
-                if (knownZeroEquipped.has(def.name) && item.equipped) {
+                if (knownZeroEquipped.has(def.name) && effectiveEquipped) {
                     itemSlots = 0;
                 } else if (knownSingleSlot.has(def.name)) {
                 } else if (knownDoubleSlot.has(def.name)) {
@@ -125,7 +162,9 @@ async function getData() {
                     itemBundleType = "Potion";
                     itemBundleCount = 3;
                 } else if (def.isContainer) {
-                    if (item.equipped) {
+                    //console.log("item "+def.name+" has id "+item.id+" and is equipped="+effectiveEquipped+" with "+ (containers.get(item.id) || []).length + " items in it ");
+                    // a container with items consumes no slots
+                    if ((containers.get(item.id) || []).length > 0) {
                         itemSlots = 0;
                     }
                 } else if (def.bundleSize > 1 && def.weight < 10) {
@@ -144,7 +183,7 @@ async function getData() {
                     name: item.definition.name,
                     containerId: item.containerEntityId,
                     quantity: item.quantity,
-                    equipped: item.equipped,
+                    equipped: effectiveEquipped,
                     itemWeight: item.definition.weight / (item.definition.bundleSize || 1),
                     itemCost: item.definition.cost / (item.definition.bundleSize || 1),
                     itemSlots: itemSlots,
@@ -188,25 +227,23 @@ async function getData() {
                     return;
                 }
                 const item = items[indices[0]];
-                console.log("test merge of "+item.name+" from "+c.data.name+" at position "+indices[0] + " with length "+indices.length);
                 for (var i = 1; i < indices.length; i++) {
                     const other = items[indices[i]];
                     if (item.itemBundleType === other.itemBundleType &&
-                        item.equipped === other.equipped && 
-                        item.itemBundleCount === other.itemBundleCount && 
+                        item.equipped === other.equipped &&
+                        item.itemBundleCount === other.itemBundleCount &&
                         item.itemWeight === other.itemWeight &&
                         item.containerId === other.containerId
                     ) {
-                        console.log("merge item "+item.name+" at "+indices[i]+" to "+indices[0]);
                         item.quantity += other.quantity;
                         items[indices[i]] = null
-                    } else {
-                        console.log("skip merge item "+item.name+" at "+indices[i]+" to "+indices[0]);
                     }
                 }
             })
-            items = items.filter((item) => !!item);
+            items = items.filter((item) => !!item && item.quantity !== 0);
+            containers = null; // TODO: reset values
 
+            // handle coins
             const coins = c.data.currencies.pp + c.data.currencies.ep + c.data.currencies.gp + c.data.currencies.sp + c.data.currencies.cp;
             const coinValue = c.data.currencies.gp + c.data.currencies.cp / 100 + c.data.currencies.sp / 10 + c.data.currencies.ep * 2 + c.data.currencies.pp * 10;
             if (coins > 0) {
@@ -234,6 +271,7 @@ async function getData() {
                 name: c.data.name,
                 strength: str,
                 extraSlots: modifierForAbilityScore(str),
+                walkSpeed: raceSpeed,
                 gold: coinValue,
                 items: items,
                 totalWeight: items.map((item) => item.quantity * item.itemWeight).reduce((a, b) => a + b, 0),
@@ -241,10 +279,11 @@ async function getData() {
             }
         });
 
-        console.log(data);
-        console.log(defaultSlots.map((def) => { return { name: def.name, weight: def.weight, def: def } }));
+        if (defaultSlots.length > 0) {
+            console.log("defaulted slots: ", defaultSlots.map((def) => { return { name: def.name, weight: def.weight, def: def } }));
+        }
 
-        console.log(data.map((c) => [
+        /*console.log(data.map((c) => [
             c.name,
             c.gold,
             c.items.map((a) => a.itemCost > 0 && a.quantity * a.itemCost).reduce((a, b) => a + b, 0),
@@ -261,7 +300,7 @@ async function getData() {
                 }
                 return b.quantity * b.itemSlots;
             }).reduce((a, b) => a + b, 0),
-        ]));
+        ]));*/
 
         const tables = data.map((c) => {
             var packed = [], equipped = [];
@@ -312,28 +351,88 @@ async function getData() {
             for (var i = 0; i < aligned.length; i++) {
                 aligned[i] = new Array(5);
                 if (i - 1 < outputPacked.length) {
-                    aligned[i][3] = outputPacked[i];
+                    aligned[i][4] = outputPacked[i];
                 }
                 if (i > equippedOffset) {
-                    aligned[i][2] = (i - equippedOffset).toString();
+                    aligned[i][1] = (i - equippedOffset).toString();
                 }
-                aligned[i][4] = (i + 1).toString();
+                aligned[i][5] = (i + 1).toString();
             }
             for (var i = 0; i < outputEquipped.length; i++) {
                 aligned[equippedOffset + 1 + i][0] = outputEquipped[i];
             }
 
+            for (var i = 0; i < equippedOffset + 4; i++) {
+                aligned[i][2] = "+10";
+                aligned[i][3] = "Travelling light";
+            }
+            for (var i = equippedOffset + 4; i < equippedOffset + 6; i++) {
+                aligned[i][2] = "+0";
+                aligned[i][3] = "Unencumbered";
+            }
+            for (var i = equippedOffset + 6; i < equippedOffset + 8; i++) {
+                aligned[i][2] = "-10";
+                aligned[i][3] = "Lightly encumbered";
+            }
+            for (var i = equippedOffset + 8; i < aligned.length; i++) {
+                aligned[i][2] = "-20";
+                aligned[i][3] = "Heavily encumbered";
+            }
+
+            var encumbranceCondition;
+            var overencumbered = false;
+            if (equipped.length > 0 || packed.length > 0) {
+                encumbranceCondition = "Overencumbered"
+                overencumbered = true;
+            } else {
+                const conditionOffset = Math.max(outputPacked.length - 1, equippedOffset + outputEquipped.length);
+                encumbranceCondition = aligned[conditionOffset][3];
+                aligned[conditionOffset][2] = "**" + aligned[conditionOffset][2] + "**";
+                aligned[conditionOffset][3] = "**" + aligned[conditionOffset][3] + "**";
+            }
+
             aligned.unshift(
-                ["**Equipped Items**", null, null, "**Packed Items**", null],
-                Array(5).fill("---"),
+                [
+                    "**Equipped Items**",
+                    null,
+                    "Speed",
+                    "Condition",
+                    "**Packed Items**" +
+                    (c.extraSlots !== 0
+                        ? (" (*" + (c.extraSlots > 0 ? "+" : "") + c.extraSlots + "*)")
+                        : ""),
+                    null,
+                ],
+                Array(6).fill("---"),
             );
 
-            return aligned.map((r) => "| " + r.join(" | ") + " |").join("\n");
+            const effectiveSpeed = c.walkSpeed + (overencumbered ? -c.walkSpeed : conditionSpeeds.get(encumbranceCondition));
+
+            var unencumberingItems = new Array(Math.max(unencumberingEquipped.length, unencumberingPacked.length));
+            for (var i = 0; i < unencumberingItems.length; i++) {
+                unencumberingItems[i] = [null, (i + 1).toString(), null];
+            }
+            unencumberingEquipped.forEach((item, idx) => { unencumberingItems[idx][0] = item })
+            unencumberingPacked.forEach((item, idx) => { unencumberingItems[idx][2] = item })
+            unencumberingItems.unshift(
+                ["**Unencumbering Equipped**", null, "**Unencumbering Packed**",],
+                Array(3).fill("---"),
+            );
+
+            var sections = ["## " + c.name + " is **" + encumbranceCondition + "** and has speed **" + effectiveSpeed + "**."];
+            var conditionTextSection = conditionText.get(encumbranceCondition);
+            if (overencumbered) {
+                sections.push("The following items are preventing you from moving:\n\n* "+[].concat(equipped, packed).join("\n* ")+"\n");
+            }
+            if (!!conditionTextSection) {
+                sections.push(conditionTextSection);
+            }
+            sections.push(aligned.map((r) => "| " + r.join(" | ") + " |").join("\n"))
+            sections.push(unencumberingItems.map((r) => "| " + r.join(" | ") + " |").join("\n"))
+            return sections.join("\n\n");
         });
 
-        console.log(tables);
-
-        return "|Bruce|\n|Stuff|\n"
+        return tables.join("\n\n<div style=\"page-break-after: always;\"></div>\n\n")
     } catch (error) {
         console.error(error);
     }
@@ -346,7 +445,11 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
-    chrome.storage.local.remove('dnd_beyond_inventory_campaign');
+    chrome.storage.local.remove([
+        'dnd_beyond_inventory_campaign',
+        'dnd_beyond_inventory_character', 
+        'dnd_beyond_inventory_results',
+    ]);
     if (!tab.url) {
         console.log("Not a web page");
         chrome.action.setPopup({ popup: '' });
@@ -356,10 +459,27 @@ chrome.action.onClicked.addListener(async (tab) => {
         });
         return;
     }
-    const url_re = new RegExp("^https://www\\.dndbeyond\\.com/campaigns/(\\d+)$");
-    const campaigns = tab.url.match(url_re);
-    if (!campaigns) {
-        console.log("Not campaign: " + tab.url);
+    const re_campaign_url = new RegExp("^https://www\\.dndbeyond\\.com/campaigns/(\\d+)$");
+    const re_character_url = new RegExp("^https://www\\.dndbeyond\\.com/characters/(\\d+)$");
+
+    if (!!(match = tab.url.match(re_character_url))) {
+        chrome.storage.local.set({ dnd_beyond_inventory_character: match[1] })
+
+        // Set the action badge to the next state
+        await chrome.action.setBadgeText({
+            tabId: tab.id,
+            text: "...",
+        });
+    } else if (!!(match = tab.url.match(re_campaign_url))) {
+        chrome.storage.local.set({ dnd_beyond_inventory_campaign: match[1] })
+
+        // Set the action badge to the next state
+        await chrome.action.setBadgeText({
+            tabId: tab.id,
+            text: "...",
+        });
+    } else {
+        console.log("Not recognized: " + tab.url);
         chrome.action.setPopup({ popup: '' });
         await chrome.action.setBadgeText({
             tabId: tab.id,
@@ -367,31 +487,23 @@ chrome.action.onClicked.addListener(async (tab) => {
         });
         return;
     }
-    const campaign = campaigns[1]
-    console.log("found campaign " + campaign);
-
-    // Set the action badge to the next state
-    await chrome.action.setBadgeText({
-        tabId: tab.id,
-        text: "...",
-    });
 
     try {
-        chrome.storage.local.set({ dnd_beyond_inventory_campaign: campaign })
         const result = await browser.scripting.executeScript({
             target: { tabId: tab.id },
             func: getData,
         });
         console.log("executeScript completed")
-        console.log(result[0].result);
         const data = result[0].result;
 
         chrome.action.setBadgeText({
             tabId: tab.id,
             text: "ON",
         });
-        //chrome.action.setPopup({tabId: tab.id, popup: "data.html"});
-        //await chrome.action.openPopup();
+
+        chrome.storage.local.set({ dnd_beyond_inventory_results: data })
+        chrome.action.setPopup({tabId: tab.id, popup: "data.html"});
+        await chrome.action.openPopup();
     } catch (error) {
         console.error(error);
         await chrome.action.setBadgeText({

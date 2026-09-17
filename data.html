@@ -1,9 +1,28 @@
-<html>
+<html style="min-width: 40em;">
   <head>
-    <script src="data.js"></script>
   </head>
   <body>
-    <h1>Got inventory</h1>
-    <table><tr><td>TODO</td></tr></table>
+    <style>
+      TABLE {
+        margin-top: 1em;
+      }
+      TH {
+        text-align: left;
+        vertical-align: top;   
+        padding-left: 1em;    
+      }
+      TD {
+        text-align: left;
+        vertical-align: top;
+        padding-left: 1em;
+        border-top: 1px solid lightgray;
+      }
+    </style>
+    <div style='font-size: 0.8em;'>
+      <a id="as_markdown" href="#">Markdown</a>
+    </div>
+    <script src="marked.js"></script>
+    <div id="markdown"></pre>
+    <script src="data.js"></script>
   </body>
 </html>
