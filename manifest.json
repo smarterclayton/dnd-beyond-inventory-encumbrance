@@ -1,6 +1,6 @@
 {
-    "name": "DND Beyond Inventory Extractor",
-    "description": "Extracts inventory from DND Beyond",
+    "name": "DND Beyond Inventory - Item-based Encumbrance",
+    "description": "Extracts inventory from DND Beyond and performs encumbrance calculations as per a homebrew version of Carcass Crawler 2 rules.",
     "version": "1.0",
     "manifest_version": 3,
     "action": {
