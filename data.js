@@ -19,41 +19,48 @@ function textToFile(text, mimeType) {
     return file;
 }
 
-var markdown = "<error>";
-chrome.storage.local.get('dnd_beyond_inventory_results', function (result) {
-    var data = result.dnd_beyond_inventory_results;
-    const title = data.title;
-    const filename = data.filename;
-    const markdown = data.markdown;
-    contentsHtml = marked.parse(markdown);
-    html = "<html><head>" + document.head.innerHTML + "</head><body>" + contentsHtml + "</body></html>";
+chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    var tab = tabs[0]
+    if (!tab) {
+        console.error("No active tab");
+        return;
+    }
 
-    var markdownFileUrl = URL.createObjectURL(textToFile(markdown), "text/plain");
-    var htmlFileUrl = URL.createObjectURL(textToFile(html), "text/html;charset=utf-8");
+    chrome.storage.session.get('dnd_beyond_inventory_results_'+tab.id, function (result) {
+        var data = result["dnd_beyond_inventory_results_"+tab.id];
+        const title = data.title;
+        const filename = data.filename;
+        const markdown = data.markdown;
+        contentsHtml = marked.parse(markdown);
+        html = "<html><head>" + document.head.innerHTML + "</head><body>" + contentsHtml + "</body></html>";
 
-    var contentsDiv =  document.getElementById("contents");
-    contentsDiv.innerHTML = contentsHtml;
+        var markdownFileUrl = URL.createObjectURL(textToFile(markdown), "text/plain");
+        var htmlFileUrl = URL.createObjectURL(textToFile(html), "text/html;charset=utf-8");
 
-    document.getElementById("as_markdown").onclick = function (evt) {
-        document.getElementById('contents').innerHTML = "<pre>" + markdown + "</pre>";
-        document.getElementById("as_markdown").parentElement.style.display = "none";
-    };
+        var contentsDiv =  document.getElementById("contents");
+        contentsDiv.innerHTML = contentsHtml;
 
-    var mdLink = document.getElementById("download_markdown");
-    mdLink.download = filename + ".md";
-    mdLink.href = markdownFileUrl
-    mdLink.addEventListener('click', () => {
-        chrome.downloads.download({ url: markdownFileUrl, filename: mdLink.download })
-            .finally(() => URL.revokeObjectURL(markdownFileUrl) );
-        return false;
-    });
+        document.getElementById("as_markdown").onclick = function (evt) {
+            document.getElementById('contents').innerHTML = "<pre>" + markdown + "</pre>";
+            document.getElementById("as_markdown").parentElement.style.display = "none";
+        };
 
-    var htmlLink = document.getElementById("download_html");
-    htmlLink.download = filename + ".html";
-    htmlLink.href = htmlFileUrl;
-    htmlLink.addEventListener('click', () => {
-        chrome.downloads.download({ url: markdownFileUrl, filename: htmlLink.download })
-            .finally(() => URL.revokeObjectURL(markdownFileUrl) );
-        return false;
+        var mdLink = document.getElementById("download_markdown");
+        mdLink.download = filename + ".md";
+        mdLink.href = markdownFileUrl
+        mdLink.addEventListener('click', () => {
+            chrome.downloads.download({ url: markdownFileUrl, filename: mdLink.download })
+                .finally(() => URL.revokeObjectURL(markdownFileUrl) );
+            return false;
+        });
+
+        var htmlLink = document.getElementById("download_html");
+        htmlLink.download = filename + ".html";
+        htmlLink.href = htmlFileUrl;
+        htmlLink.addEventListener('click', () => {
+            chrome.downloads.download({ url: markdownFileUrl, filename: htmlLink.download })
+                .finally(() => URL.revokeObjectURL(markdownFileUrl) );
+            return false;
+        });
     });
 });

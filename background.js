@@ -1,5 +1,5 @@
 
-async function getData() {
+async function getData(campaign, character) {
     async function getToken() {
         const auth = await fetch(
             "https://auth-service.dndbeyond.com/v1/cobalt-token",
@@ -77,21 +77,18 @@ async function getData() {
         "Mirror",
     ]);
 
-    const parameters = (await chrome.storage.local.get(['dnd_beyond_inventory_campaign', 'dnd_beyond_inventory_character']));
-
     try {
-        const campaign = parameters.dnd_beyond_inventory_campaign
         const token = await getToken();
 
         var allCharacters = []
-        if (!!parameters.dnd_beyond_inventory_character) {
+        if (!!character) {
             allCharacters.push(
                 summon(
-                    "https://character-service.dndbeyond.com/character/v5/character/" + parameters.dnd_beyond_inventory_character + "?includeCustomItems=true",
+                    "https://character-service.dndbeyond.com/character/v5/character/" + character + "?includeCustomItems=true",
                     token,
                 ),
             );
-        } else {
+        } else if (!!campaign) {
             const characterSummary = await summon(
                 "https://api.dndbeyond.com/campaigns/v1/" + campaign + "/characters",
                 token,
@@ -449,11 +446,6 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
-    var removed = chrome.storage.local.remove([
-        'dnd_beyond_inventory_campaign',
-        'dnd_beyond_inventory_character',
-        'dnd_beyond_inventory_results',
-    ]);
     if (!tab.url) {
         console.log("Not a web page");
         chrome.action.setPopup({ 
@@ -469,17 +461,16 @@ chrome.action.onClicked.addListener(async (tab) => {
     const re_campaign_url = new RegExp("^https://www\\.dndbeyond\\.com/campaigns/(\\d+)$");
     const re_character_url = new RegExp("^https://www\\.dndbeyond\\.com/characters/(\\d+)$");
 
+    var campaign = "", character = "";
     if (!!(match = tab.url.match(re_character_url))) {
-        chrome.storage.local.set({ dnd_beyond_inventory_character: match[1] })
-
+        character = match[1];
         // Set the action badge to the next state
         await chrome.action.setBadgeText({
             tabId: tab.id,
             text: "...",
         });
     } else if (!!(match = tab.url.match(re_campaign_url))) {
-        chrome.storage.local.set({ dnd_beyond_inventory_campaign: match[1] })
-
+        campaign = match[1];
         // Set the action badge to the next state
         await chrome.action.setBadgeText({
             tabId: tab.id,
@@ -499,6 +490,7 @@ chrome.action.onClicked.addListener(async (tab) => {
         const result = await browser.scripting.executeScript({
             target: { tabId: tab.id },
             func: getData,
+            args: [campaign, character],
         });
         const data = result[0].result;
 
@@ -506,8 +498,9 @@ chrome.action.onClicked.addListener(async (tab) => {
             tabId: tab.id,
             text: "ON",
         });
-        await removed;
-        await chrome.storage.local.set({ dnd_beyond_inventory_results: data });
+        var storageObj = {};
+        storageObj["dnd_beyond_inventory_results_" + tab.id] = data
+        await chrome.storage.session.set(storageObj);
         await chrome.action.setPopup({ tabId: tab.id, popup: "data.html" });
         await chrome.action.openPopup();
     } catch (error) {
