@@ -185,13 +185,16 @@ async function getData(campaign, character) {
                 } else {
                     defaultSlots.push(item.definition);
                 }
+                if (def.name == "Potion of Healing") {
+                    def.cost = 50;
+                }
                 return {
-                    name: item.definition.name,
+                    name: def.name,
                     containerId: itemContainerId,
                     quantity: item.quantity,
                     equipped: effectiveEquipped,
-                    itemWeight: item.definition.weight / (item.definition.bundleSize || 1),
-                    itemCost: item.definition.cost / (item.definition.bundleSize || 1),
+                    itemWeight: def.weight / (def.bundleSize || 1),
+                    itemCost: def.cost / (def.bundleSize || 1),
                     itemSlots: itemSlots,
                     itemBundleType: itemBundleType,
                     itemBundleCount: itemBundleCount,
@@ -483,7 +486,7 @@ async function getData(campaign, character) {
             const goldValue = c.items.map((a) => a.quantity * Math.abs(a.itemCost)).reduce((a, b) => a + b, 0);
             const coinValue = c.items.map((a) => a.name == "Coins" && a.quantity * Math.abs(a.itemCost)).reduce((a, b) => a + b, 0);
             const weight = c.items.map((a) => a.quantity * a.itemWeight).reduce((a, b) => a + b, 0);
-            sections.push("Inventory weighs "+(+weight.toFixed(2))+" lbs and has a total value of "+(+goldValue.toFixed(2))+" ("+(+coinValue.toFixed(2))+" in coins)");
+            sections.push("Inventory weighs "+(+weight.toFixed(2))+" lbs and has a total value of "+(+goldValue.toFixed(2))+" gp ("+(+coinValue.toFixed(2))+" gp in coins)");
 
             sections.push(aligned.map((r) => "| " + r.join(" | ") + " |").join("\n"))
             sections.push(unencumberingItems.map((r) => "| " + r.join(" | ") + " |").join("\n"))
