@@ -25,7 +25,7 @@ async function getData(campaign, character) {
     }
 
     const conditionSpeeds = new Map([
-        ["Travelling light", 10],
+        ["Traveling light", 10],
         ["Unencumbered", 0],
         ["Lightly encumbered", -10],
         ["Heavily encumbered", -20],
@@ -133,12 +133,20 @@ async function getData(campaign, character) {
                 }
                 containers.get(item.containerEntityId).push(idx);
             });
-
+            console.log(c.data.inventory);
             var items = c.data.inventory.map((item) => {
                 const def = item.definition;
                 const effectiveEquipped = item.equipped || (item.containerEntityId == c.data.id && !def.isContainer);
                 var itemSlots = 1;
                 var itemBundleType, itemBundleCount;
+                var itemContainerId = item.ContainerEntityId
+
+                var isPotion = def.filterType === "Potion" 
+                || def.type === "Potion" 
+                || def.name.includes("Potion")
+                || def.name.includes("Flask")
+                || def.name.includes("Oil of");
+
                 if (knownZeroEquipped.has(def.name) && effectiveEquipped) {
                     itemSlots = 0;
                 } else if (knownSingleSlot.has(def.name)) {
@@ -155,9 +163,10 @@ async function getData(campaign, character) {
                 } else if (def.filterType === "Weapon" && def.weight <= 10) {
                 } else if (def.properties && def.properties.find((p) => p.name === "Two-Handed")) {
                     itemSlots = 2;
-                } else if (def.filterType === "Potion" || def.subType === "Potion") {
+                } else if (isPotion) {
                     itemBundleType = "Potion";
                     itemBundleCount = 3;
+                    itemContainerId = null;
                 } else if (def.isContainer) {
                     //console.log("item "+def.name+" has id "+item.id+" and is equipped="+effectiveEquipped+" with "+ (containers.get(item.id) || []).length + " items in it ");
                     // a container with items consumes no slots
@@ -168,7 +177,7 @@ async function getData(campaign, character) {
                     itemSlots = 1;
                     itemBundleType = def.name;
                     itemBundleCount = def.bundleSize;
-                } else if (def.weight <= 0.01 && item.quantity < 100) {
+                } else if (def.weight <= 0.01 && item.quantity <= 25) {
                     itemSlots = 0;
                 } else if (def.weight > 10) {
                     itemSlots = 2;
@@ -178,7 +187,7 @@ async function getData(campaign, character) {
                 }
                 return {
                     name: item.definition.name,
-                    containerId: item.containerEntityId,
+                    containerId: itemContainerId,
                     quantity: item.quantity,
                     equipped: effectiveEquipped,
                     itemWeight: item.definition.weight / (item.definition.bundleSize || 1),
@@ -212,6 +221,8 @@ async function getData(campaign, character) {
                 }
             }
 
+            console.log(items);
+
             // merge bundled items that have the same name, weight, and bundle count
             var bundleTypes = new Map();
             items.forEach((item, idx) => {
@@ -219,21 +230,27 @@ async function getData(campaign, character) {
                 if (!bundleTypes.has(item.name)) { bundleTypes.set(item.name, []) }
                 bundleTypes.get(item.name).push(idx);
             });
-            bundleTypes.forEach((indices) => {
+            bundleTypes.forEach((indices, name) => {
                 if (indices.length < 2) {
                     return;
                 }
-                const item = items[indices[0]];
-                for (var i = 1; i < indices.length; i++) {
-                    const other = items[indices[i]];
-                    if (item.itemBundleType === other.itemBundleType &&
-                        item.equipped === other.equipped &&
-                        item.itemBundleCount === other.itemBundleCount &&
-                        item.itemWeight === other.itemWeight &&
-                        item.containerId === other.containerId
-                    ) {
-                        item.quantity += other.quantity;
-                        items[indices[i]] = null
+                for (var i=0; i<indices.length; i++) {
+                    const item = items[indices[i]];
+                    if (!!item) {
+                        for (var j = i+1; j < indices.length; j++) {
+                            const other = items[indices[j]];
+                            if (!!other) {
+                                if (item.itemBundleType === other.itemBundleType &&
+                                    item.equipped === other.equipped &&
+                                    item.itemBundleCount === other.itemBundleCount &&
+                                    item.itemWeight === other.itemWeight &&
+                                    item.containerId === other.containerId
+                                ) {
+                                    item.quantity += other.quantity;
+                                    items[indices[j]] = null
+                                }
+                            }
+                        }
                     }
                 }
             })
@@ -244,14 +261,51 @@ async function getData(campaign, character) {
             const coins = c.data.currencies.pp + c.data.currencies.ep + c.data.currencies.gp + c.data.currencies.sp + c.data.currencies.cp;
             const coinValue = c.data.currencies.gp + c.data.currencies.cp / 100 + c.data.currencies.sp / 10 + c.data.currencies.ep * 2 + c.data.currencies.pp * 10;
             if (coins > 0) {
-                items.push({
+                const itemCoins = {
                     name: "Coins",
                     quantity: coins,
-                    itemWeight: 0.01,
+                    itemWeight: 0.02,
                     itemBundleCount: 500,
                     itemBundleType: "Coins",
                     itemCost: -coinValue / coins,
-                })
+                    itemSlots: 1,
+                }
+                items.push(itemCoins);
+            }
+
+            // special case: characters get one free equipped potion, the remainder require slots,
+            //   so break a single potion off to its own slot and give it a zero slot cost (if that
+            //   would help)
+            if (!!(freePotion = items.find((item) => 
+                item.itemBundleType == "Potion" && item.equipped 
+                // if the modulus is not one, this won't save any slots
+                && (item.quantity % item.itemBundleCount === 1)
+            ))) {
+                if (freePotion.quantity !== 1) {
+                    freePotion.quantity -= 1;
+                    freePotion = structuredClone(freePotion);
+                    freePotion.quantity = 1
+                    items.push(freePotion)
+                }
+                freePotion.itemSlots = 0;
+            }
+
+            // special case: for items with nominal weight in large quantities (gems, coins),
+            //   grant one free slot for them (a quarter of a pound is considered 'nominal')
+            if (!!(light = items.find((item) => 
+                item.itemBundleType == "Coins"
+                // if the modulus is not one, this won't save any slots
+                && (item.quantity % item.itemBundleCount) < Math.round(0.5/item.itemWeight)
+            ))) {
+                console.log("found coins", light)
+                const remainder = light.quantity % light.itemBundleCount;
+                if (light.quantity > light.itemBundleCount) {
+                    light.quantity -= remainder;
+                    light = structuredClone(light);
+                    light.quantity = remainder;
+                    items.push(light);
+                }
+                light.itemSlots = 0;
             }
 
             items = items.filter((item) => item.quantity > 0).sort((a, b) => {
@@ -301,6 +355,7 @@ async function getData(campaign, character) {
 
         const tables = data.map((c) => {
             var packed = [], equipped = [];
+
             c.items.filter((item) => item.itemSlots > 0).forEach((item) => {
                 const rows = item.equipped ? equipped : packed;
                 if (item.itemBundleCount > 1) {
@@ -361,7 +416,7 @@ async function getData(campaign, character) {
 
             for (var i = 0; i < equippedOffset + 4; i++) {
                 aligned[i][2] = "+10";
-                aligned[i][3] = "Travelling light";
+                aligned[i][3] = "Traveling light";
             }
             for (var i = equippedOffset + 4; i < equippedOffset + 6; i++) {
                 aligned[i][2] = "+0";
@@ -424,6 +479,12 @@ async function getData(campaign, character) {
             if (!!conditionTextSection) {
                 sections.push(conditionTextSection);
             }
+
+            const goldValue = c.items.map((a) => a.quantity * Math.abs(a.itemCost)).reduce((a, b) => a + b, 0);
+            const coinValue = c.items.map((a) => a.name == "Coins" && a.quantity * Math.abs(a.itemCost)).reduce((a, b) => a + b, 0);
+            const weight = c.items.map((a) => a.quantity * a.itemWeight).reduce((a, b) => a + b, 0);
+            sections.push("Inventory weighs "+(+weight.toFixed(2))+" lbs and has a total value of "+(+goldValue.toFixed(2))+" ("+(+coinValue.toFixed(2))+" in coins)");
+
             sections.push(aligned.map((r) => "| " + r.join(" | ") + " |").join("\n"))
             sections.push(unencumberingItems.map((r) => "| " + r.join(" | ") + " |").join("\n"))
             return sections.join("\n\n");
