@@ -1,7 +1,5 @@
 <html style="min-width: 40em;">
   <head>
-  </head>
-  <body>
     <style>
       TABLE {
         margin-top: 1em;
@@ -18,11 +16,14 @@
         border-top: 1px solid lightgray;
       }
     </style>
+  </head>
+  <body>
     <div style='font-size: 0.8em;'>
-      <a id="as_markdown" href="#">Markdown</a>
+      <label>Download </label><a id="download_html" href="#">HTML</a> | <a id="download_markdown" href="#">Markdown</a>
+      <label>Show </label><a id="as_markdown" href="#">Markdown</a>
     </div>
     <script src="marked.js"></script>
-    <div id="markdown"></pre>
+    <div id="contents"></pre>
     <script src="data.js"></script>
   </body>
 </html>

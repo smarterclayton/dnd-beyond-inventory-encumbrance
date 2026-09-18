@@ -23,7 +23,7 @@ async function getData() {
     function modifierForAbilityScore(score) {
         return Math.round((score - 10) / 2);
     }
-  
+
     const conditionSpeeds = new Map([
         ["Travelling light", 10],
         ["Unencumbered", 0],
@@ -107,7 +107,7 @@ async function getData() {
             });
         }
         const characters = await Promise.all(allCharacters);
-        
+
         var defaultSlots = [];
         const data = characters.map((c) => {
             const overrideStr = c.data.overrideStats.find((s) => s.id === 1);
@@ -422,7 +422,7 @@ async function getData() {
             var sections = ["## " + c.name + " is **" + encumbranceCondition + "** and has speed **" + effectiveSpeed + "**."];
             var conditionTextSection = conditionText.get(encumbranceCondition);
             if (overencumbered) {
-                sections.push("The following items are preventing you from moving:\n\n* "+[].concat(equipped, packed).join("\n* ")+"\n");
+                sections.push("The following items are preventing you from moving:\n\n* " + [].concat(equipped, packed).join("\n* ") + "\n");
             }
             if (!!conditionTextSection) {
                 sections.push(conditionTextSection);
@@ -432,7 +432,11 @@ async function getData() {
             return sections.join("\n\n");
         });
 
-        return tables.join("\n\n<div style=\"page-break-after: always;\"></div>\n\n")
+        return {
+            title: (characters.length > 1) ? "Party Encumbrance" : "Character Encumbrance",
+            filename: (characters.length > 1) ? "party_encumbrance" : data[0].name.toLowerCase().replace(/[^a-z0-9]/g, '_') + "_encumbrance",
+            markdown: tables.join("\n\n<div style=\"page-break-after: always;\"></div>\n\n"),
+        }
     } catch (error) {
         console.error(error);
     }
@@ -445,9 +449,9 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
-    chrome.storage.local.remove([
+    var removed = chrome.storage.local.remove([
         'dnd_beyond_inventory_campaign',
-        'dnd_beyond_inventory_character', 
+        'dnd_beyond_inventory_character',
         'dnd_beyond_inventory_results',
     ]);
     if (!tab.url) {
@@ -493,16 +497,15 @@ chrome.action.onClicked.addListener(async (tab) => {
             target: { tabId: tab.id },
             func: getData,
         });
-        console.log("executeScript completed")
         const data = result[0].result;
 
         chrome.action.setBadgeText({
             tabId: tab.id,
             text: "ON",
         });
-
-        chrome.storage.local.set({ dnd_beyond_inventory_results: data })
-        chrome.action.setPopup({tabId: tab.id, popup: "data.html"});
+        await removed;
+        await chrome.storage.local.set({ dnd_beyond_inventory_results: data });
+        chrome.action.setPopup({ tabId: tab.id, popup: "data.html" });
         await chrome.action.openPopup();
     } catch (error) {
         console.error(error);
