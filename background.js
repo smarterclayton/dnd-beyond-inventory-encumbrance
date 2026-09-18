@@ -456,7 +456,10 @@ chrome.action.onClicked.addListener(async (tab) => {
     ]);
     if (!tab.url) {
         console.log("Not a web page");
-        chrome.action.setPopup({ popup: '' });
+        chrome.action.setPopup({ 
+            tabId: tab.id,
+            popup: '',
+        });
         await chrome.action.setBadgeText({
             tabId: tab.id,
             text: "OFF",
@@ -505,7 +508,7 @@ chrome.action.onClicked.addListener(async (tab) => {
         });
         await removed;
         await chrome.storage.local.set({ dnd_beyond_inventory_results: data });
-        chrome.action.setPopup({ tabId: tab.id, popup: "data.html" });
+        await chrome.action.setPopup({ tabId: tab.id, popup: "data.html" });
         await chrome.action.openPopup();
     } catch (error) {
         console.error(error);
@@ -515,13 +518,3 @@ chrome.action.onClicked.addListener(async (tab) => {
         });
     }
 });
-
-//         "default_popup": "index.html"
-/*
-chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-  var currTab = tabs[0];
-  if (currTab) { // Sanity check
-   
-  }
-});
-*/
