@@ -43,7 +43,6 @@ async function getData(campaign, character) {
         "Book",
         "Lantern",
         "Hooded Lantern",
-        "Hunting Trap",
         "Worn Fiddle",
         "Carpenter's Tools",
         "Herbalism Kit",
@@ -59,6 +58,7 @@ async function getData(campaign, character) {
     const knownDoubleSlot = new Set([
         "Quarterstaff",
         "Tent",
+        "Hunting Trap",
     ]);
     const knownSimpleBundle = new Set([
         "Torch",
@@ -133,7 +133,7 @@ async function getData(campaign, character) {
                 }
                 containers.get(item.containerEntityId).push(idx);
             });
-            console.log(c.data.inventory);
+            //console.log(c.data);
             var items = c.data.inventory.map((item) => {
                 const def = item.definition;
                 const effectiveEquipped = item.equipped || (item.containerEntityId == c.data.id && !def.isContainer);
@@ -201,6 +201,8 @@ async function getData(campaign, character) {
                 }
             })
 
+            //console.log(items);
+
             // special case partial bundles
             const oil = items.find((item) => item.name === "Oil");
             const lantern = items.find((item) => item.name === "Lantern" || item.name == "Hooded Lantern");
@@ -223,8 +225,6 @@ async function getData(campaign, character) {
                     lantern.quantity -= 1;
                 }
             }
-
-            console.log(items);
 
             // merge bundled items that have the same name, weight, and bundle count
             var bundleTypes = new Map();
@@ -300,7 +300,6 @@ async function getData(campaign, character) {
                 // if the modulus is not one, this won't save any slots
                 && (item.quantity % item.itemBundleCount) < Math.round(0.5/item.itemWeight)
             ))) {
-                console.log("found coins", light)
                 const remainder = light.quantity % light.itemBundleCount;
                 if (light.quantity > light.itemBundleCount) {
                     light.quantity -= remainder;
@@ -332,6 +331,8 @@ async function getData(campaign, character) {
                 totalCost: items.map((item) => item.quantity * Math.max(item.itemCost, 0)).reduce((a, b) => a + b, 0),
             }
         });
+
+        //console.log(data);
 
         if (defaultSlots.length > 0) {
             console.log("defaulted slots: ", defaultSlots.map((def) => { return { name: def.name, weight: def.weight, def: def } }));
@@ -382,7 +383,8 @@ async function getData(campaign, character) {
                         }
                     }
                 }
-            })
+            });
+            //console.log(packed);
 
             var unencumberingPacked = [], unencumberingEquipped = []
             c.items.filter((item) => item.itemSlots === 0).forEach((item) => {
@@ -390,15 +392,8 @@ async function getData(campaign, character) {
                 rows.push(item.name + " *(" + item.quantity + ")*");
             });
 
-            var outputPacked = [];
-            var bonusPacked = [];
             const maxPacked = 16 + c.extraSlots
-            if (c.extraSlots > 0) {
-                bonusPacked = packed.splice(0, c.extraSlots);
-                outputPacked = packed.splice(0, 16);
-            } else {
-                outputPacked = packed.splice(0, 16 + c.extraSlots);
-            }
+            const outputPacked = packed.splice(0, 16 + c.extraSlots);
             const outputEquipped = equipped.splice(0, 9);
 
             var aligned = new Array(maxPacked);
